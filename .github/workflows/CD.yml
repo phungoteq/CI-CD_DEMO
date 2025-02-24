@@ -62,6 +62,8 @@ jobs:
           else
             echo "passed=false" >> $GITHUB_OUTPUT
           fi
+      - name: print echo test pass
+        run: echo "test_cd=${{steps.test_status.outputs.passed}}" >> $GITHUB_OUTPUT
 
   manual-approval:
     needs: [unit-test]

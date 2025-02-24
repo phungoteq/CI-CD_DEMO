@@ -68,7 +68,7 @@ jobs:
   manual-approval:
     needs: [unit-test]
     runs-on: ubuntu-latest
-    if: needs.unit_test.outputs.test_passed == false
+    if: needs.unit_test.outputs.test_passed == "false"
     environment: 
       name: production-approval
       url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -80,7 +80,7 @@ jobs:
     needs: [prebuild, unit-test]
     runs-on: ubuntu-latest
     if: |
-      needs.unit_test.outputs.test_passed == true || needs.manual-approval.result == 'success'
+      ${{needs.unit_test.outputs.test_passed}} == "true" || needs.manual-approval.result == 'success'
     environment:
       name: production-approval
       url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

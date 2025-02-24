@@ -63,7 +63,6 @@ jobs:
           else
             echo "passed=false" >> $GITHUB_OUTPUT
           fi
-      - name: print echo test pass
 
   manual-approval:
     needs: [unit-test]

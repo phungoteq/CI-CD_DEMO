@@ -76,12 +76,11 @@ jobs:
         run: echo "Waiting for manual approval to proceed with deployment..."
 
   deploy:
-    needs: [prebuild, unit-test]
+    needs: [prebuild, unit-test, manual-approval]
     runs-on: ubuntu-latest
     if: |
-      always() &&
-      (needs.unit_test.outputs.test_passed == 'true' ||
-       (needs.unit_test.outputs.test_passed == 'false' && needs.manual-approval.result == 'success'))
+      needs.unit_test.outputs.test_passed == 'true' ||
+      (needs.unit_test.outputs.test_passed == 'false' && needs.manual-approval.result == 'success')
     environment:
       name: production-approval
       url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -78,8 +78,8 @@ jobs:
   deploy:
     needs: [prebuild, unit-test]
     runs-on: ubuntu-latest
-    if: |
-      needs.unit_test.outputs.test_passed == 'true'
+    # if: |
+    #   needs.unit_test.outputs.test_passed == 'true'
     environment:
       name: production-approval
       url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

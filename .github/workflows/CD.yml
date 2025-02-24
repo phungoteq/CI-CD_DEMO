@@ -76,7 +76,7 @@ jobs:
         run: echo "Waiting for manual approval to proceed with deployment..."
 
   deploy:
-    needs: [prebuild, unit-test, manual-approval]
+    needs: [prebuild, unit-test]
     runs-on: ubuntu-latest
     if: |
       always() &&

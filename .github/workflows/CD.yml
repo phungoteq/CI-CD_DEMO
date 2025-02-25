@@ -1,26 +1,31 @@
-name: CD_Demo
+name: CD Pipeline
 
 on:
   push:
     branches: 
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
 
 jobs:
   prebuild:
     runs-on: ubuntu-latest
     outputs:
-      release_notes: ${{ steps.extract-release-notes.outputs.content }}
+      release_notes: ${{ steps.get-release-notes.outputs.content }}
       branch_name: ${{ steps.get-branch-name.outputs.name }}
-    
+
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
-    - name: Extract release notes
-      id: extract-release-notes
+    - name: Get release notes
+      id: get-release-notes
       run: |
         TAG_NAME=${GITHUB_REF#refs/tags/}
-        NOTES=$(git tag -l --format='%(contents)' "$TAG_NAME")
+        NOTES=$(git tag -l --format='%(contents)' "$TAG_NAME" || echo "No release notes")
         echo "content=$NOTES" >> $GITHUB_OUTPUT
 
     - name: Get branch name
@@ -34,17 +39,21 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       test_status: ${{ steps.run-tests.outputs.result }}
-    
+
     steps:
     - uses: actions/checkout@v4
-    
-    - uses: actions/setup-python@v5
+
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v5
       with:
-        python-version: "3.11"
-    
+        python-version: ${{ env.PYTHON_VERSION }}
+
     - name: Install dependencies
-      run: poetry install --no-interaction
-    
+      run: |
+        python -m pip install --upgrade pip
+        pip install poetry
+        poetry install
+
     - name: Run tests
       id: run-tests
       continue-on-error: true
@@ -62,9 +71,9 @@ jobs:
     environment:
       name: production-approval
       url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-    
+
     steps:
-    - name: Require approval
+    - name: Wait for approval
       run: echo "Manual approval required for deployment"
 
   deploy:
@@ -78,15 +87,20 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-    
+      url: https://your-production-url.com
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Deployment setup
-      run: echo "Deploying version ${{ github.ref_name }}"
-    
+    - name: Checkout code
+      uses: actions/checkout@v4
+
     - name: Show deployment info
       run: |
-        echo "Branch: ${{ needs.prebuild.outputs.branch_name }}"
-        echo "Release notes: ${{ needs.prebuild.outputs.release_notes }}"
+        echo "🚀 Deploying version ${{ github.ref_name }}"
+        echo "📌 Source branch: ${{ needs.prebuild.outputs.branch_name }}"
+        echo "📝 Release notes:"
+        echo "${{ needs.prebuild.outputs.release_notes }}"
+
+    - name: Perform deployment
+      run: |
+        # Add your deployment commands here
+        echo "✅ Successfully deployed!"

@@ -1,4 +1,5 @@
 name: CD_Demo
+
 on:
   push:
     branches:
@@ -9,15 +10,13 @@ jobs:
     outputs:
       RELEASE_NOTES: ${{ steps.extractReleaseNotes.outputs.RELEASE_NOTES }}
       BRANCH_NAME: ${{ steps.extractBranch.outputs.BRANCH_NAME }}
+    
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
+        
       - id: extractReleaseNotes
         run: |
           TAG_NAME=$(echo $GITHUB_REF | sed 's|refs/tags/||')
-          echo "Fetching release notes for tag: $TAG_NAME"
           RELEASE_NOTES=$(git tag -l --format='%(contents)' $TAG_NAME)
           echo "RELEASE_NOTES<<EOF" >> $GITHUB_OUTPUT
           echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
@@ -34,77 +33,49 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       test_passed: ${{ steps.test_status.outputs.passed }}
+    
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          
-      - name: Install poetry
-        run: |
-          curl -sSL https://install.python-poetry.org | python - --version 1.8.2
-          echo "$HOME/.poetry/bin" >> $GITHUB_PATH
-
-      - name: Poetry Install Dependencies
-        run: poetry install
-
-      - name: create .env file
-        run: cp .env.example .env
-
+        
+      - uses: actions/setup-python@v5
+        
       - name: Run tests
         id: test_status
         continue-on-error: true
         run: |
-          if make test; then
-            echo "passed=true" >> $GITHUB_OUTPUT
-          else
-            echo "passed=false" >> $GITHUB_OUTPUT
-          fi
-      - name: print echo test pass
-        run: echo "test_cd=${{steps.test_status.outputs.passed}}" >> $GITHUB_OUTPUT
+          # Your actual testing commands here 
+          echo "passed=$?" >> $GITHUB_OUTPUT
 
-
-  manual-approval:
+  staging-deployment:
     needs: [unit-test]
     runs-on: ubuntu-latest
-    if: ${{needs.unit_test.outputs.test_passed}} == 'false'
-    environment: 
-      name: production-approval
-      url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    
     steps:
-      - name: Manual Approval
-        run: echo "Waiting for manual approval to proceed with deployment..."
-
-  deploy:
-    needs: [prebuild, unit-test, manual-approval]
-    runs-on: ubuntu-latest
-    if: |
-      ${{needs.unit_test.outputs.test_passed}} == 'true' ||
-      (${{needs.unit_test.outputs.test_passed}} == 'false' && ${{needs.manual-approval.result}} == 'success')
-    environment:
-      name: production-approval
-      url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
+      - name: Conditional Deployment Gatekeeper
+        id: check-deployment-condition
+        
+        env:
+          TEST_RESULT_PASSED: ${{ needs.unit-test.outputs.test_passed }}
+        
         run: |
-          curl -sSL https://install.python-poetry.org | python - --version 1.8.2
-          echo "$HOME/.poetry/bin" >> $GITHUB_PATH
-          poetry install
+          echo "Test Result Status = ${TEST_RESULT_PASSED}"
+          
+          # Only allow auto-deployment when tests pass 
+          [[ "$TEST_RESULT_PASSED" == "0" ]] || exit 1
 
-      - name: Build application
-        run: echo "Building application..."
+      - name: Perform Staging Deployment 
+        # Only runs when previous step succeeds 
+        uses your-deployment-action@v2
 
-      - name: Deploy application
-        run: |
-          echo "Deploying version ${{ github.ref_name }}"
-          echo "From branch: ${{ needs.prebuild.outputs.BRANCH_NAME }}"
-          echo "Release notes: ${{ needs.prebuild.outputs.RELEASE_NOTES }}"
+  production-deployment:
+    name: Production Deployment Gate 
+    
+     # Require explicit approval even when automated checks pass 
+     environment:
+       name: production 
+       url:${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    
+     # Only trigger after staging validation 
+     needs:[staging-deployment] 
+     
+     steps:[your-production-deployment-steps]

@@ -38,7 +38,7 @@ jobs:
     needs: prebuild
     runs-on: ubuntu-latest
     outputs:
-      test_status: ${{ steps.run-tests.outputs.result }}
+      test_status: ${{ steps.run-tests.outputs.result || 'failure' }}
 
     steps:
     - uses: actions/checkout@v4
@@ -50,7 +50,6 @@ jobs:
 
     - name: Run tests
       id: run-tests
-      continue-on-error: true
       run: |
         if poetry run pytest; then
           echo "result=success" >> $GITHUB_OUTPUT
@@ -64,7 +63,7 @@ jobs:
 
     - name: Debug Test Status
       run: |
-        echo "Test Status: ${{ steps.run-tests.outputs.result }}"
+        echo "Test Status: ${{ needs.unit-test.outputs.test_status }}"
 
   manual-approval-cd:
     needs: unit-test
@@ -84,7 +83,7 @@ jobs:
       - unit-test
       - manual-approval-cd
     if: |
-      needs.unit-test.outputs.test_status == 'success' || needs.manual-approval-cd.result == 'success'
+      needs.unit-test.outputs.test_status == 'success' || needs.manual-approval-cd.outcome == 'success'
     runs-on: ubuntu-latest
     environment:
       name: production-approval

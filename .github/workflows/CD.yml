@@ -89,12 +89,10 @@ jobs:
       runs-on: ubuntu-latest
       environment:
         name: production-approval
-
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Show deployment info 
-      run: |
-        echo "🚀 Deploying version ${{ github.ref_name }}"
-        echo "📌 Source branch: ${{ needs.prebuild.outputs.branch_name }}"
+      steps:
+        - uses: actions/checkout@v4
+        
+        - name: Show deployment info 
+          run: |
+            echo "🚀 Deploying version ${{ github.ref_name }}"
+            echo "📌 Source branch: ${{ needs.prebuild.outputs.branch_name }}"

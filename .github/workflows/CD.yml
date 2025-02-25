@@ -51,41 +51,47 @@ jobs:
     - name: Install Poetry
       run: pip install poetry==1.8.2
 
-    - name: Run tests with JUnit report
+    - name: Run tests
       id: run-tests
       continue-on-error: true
       run: |
-        poetry run pytest --junitxml=test-results.xml || true
-        echo "result=$(if [ $? -eq 0 ]; then echo 'success'; else echo 'failure'; fi)" >> $GITHUB_OUTPUT
-
-    - name: Show detailed test results
-      if: always()
-      uses: test-summary/action@v2
-      with:
-        paths: "test-results.xml"
-        show: "all"
-
-    - name: Print simplified status
-      run: |
-        echo "=== TEST SUMMARY ==="
-        echo "Status: ${{ steps.run-tests.outputs.result }}"
-        echo "===================="
+        if poetry run pytest; then
+          echo "result=success" >> $GITHUB_OUTPUT
+        else
+          echo "result=failure" >> $GITHUB_OUTPUT
+        fi
 
   manual-approval-cd:
     needs: unit-test
     if: ${{ needs.unit-test.outputs.test_status == 'failure' }}
     runs-on: ubuntu-latest
     environment:
-      name: production-approval
+      name: production-gate  # Đã sửa tên environment
+    
+    # Thêm steps theo yêu cầu của GitHub Actions [5][7]
+    steps:
+    - name: Wait for approval
+      uses: tibdex/request-review@v1  # Action chuyên dụng cho manual approval [6]
+      with:
+        label: "requires-review"
+        reviewers: "your-team-name"
 
   deploy:
     needs:
-      - prebuild
-      - unit-test
+      - prebuild 
+      - unit-test 
       - manual-approval-cd 
+    
+    # Điều kiện triển khai cải tiến [2][9]
     if: |
-      needs.unit-test.outputs.test_status == 'success' || needs.manual-approval-cd.result == 'success'
+      (needs.unit-test.outputs.test_status == 'success') ||
+      (needs.unit-test.outputs.test_status == 'failure' && needs.manual-approval-cd.result == 'success')
+    
     runs-on: ubuntu-latest
+    
+    # Sử dụng environment đúng chuẩn [6]
+    environment:
+      name: production 
     
     steps:
     - uses: actions/checkout@v4
@@ -93,3 +99,4 @@ jobs:
     - name: Show deployment info 
       run: |
         echo "🚀 Deploying version ${{ github.ref_name }}"
+        echo "📌 Source branch: ${{ needs.prebuild.outputs.branch_name }}"

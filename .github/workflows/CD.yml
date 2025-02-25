@@ -61,17 +61,22 @@ jobs:
           echo "result=failure" >> $GITHUB_OUTPUT
         fi
 
+    - name: Print simplified status
+      run: |
+        echo "=== TEST SUMMARY ==="
+        echo "Status: ${{ steps.run-tests.outputs.result }}"
+        echo "===================="
+
   manual-approval-cd:
     needs: unit-test
     if: ${{ needs.unit-test.outputs.test_status == 'failure' }}
     runs-on: ubuntu-latest
     environment:
-      name: production-gate  # Đã sửa tên environment
-    
-    # Thêm steps theo yêu cầu của GitHub Actions [5][7]
+      name: production-approval
+
     steps:
     - name: Wait for approval
-      uses: tibdex/request-review@v1  # Action chuyên dụng cho manual approval [6]
+      uses: tibdex/request-review@v1 
       with:
         label: "requires-review"
         reviewers: "your-team-name"
@@ -82,16 +87,14 @@ jobs:
       - unit-test 
       - manual-approval-cd 
     
-    # Điều kiện triển khai cải tiến [2][9]
     if: |
       (needs.unit-test.outputs.test_status == 'success') ||
       (needs.unit-test.outputs.test_status == 'failure' && needs.manual-approval-cd.result == 'success')
     
     runs-on: ubuntu-latest
     
-    # Sử dụng environment đúng chuẩn [6]
     environment:
-      name: production 
+      name: production-approval 
     
     steps:
     - uses: actions/checkout@v4

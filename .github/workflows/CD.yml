@@ -70,6 +70,9 @@ jobs:
         else
           echo "result=failure" >> $GITHUB_OUTPUT
         fi
+    - name: Print test result
+      run: |
+        echo "🔍 Unit Test Status: ${{ steps.run-tests.outputs.result }}"
 
   manual-approval-cd:
     needs: 

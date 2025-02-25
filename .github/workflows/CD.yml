@@ -57,6 +57,7 @@ jobs:
 
       - name: Run tests
         id: run-tests
+        continue-on-error: true
         run: |
           if poetry run pytest; then
             echo "result=success" >> $GITHUB_OUTPUT

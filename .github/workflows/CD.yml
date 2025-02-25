@@ -13,63 +13,59 @@ jobs:
     outputs:
       release_notes: ${{ steps.get-release-notes.outputs.content }}
       branch_name: ${{ steps.get-branch-name.outputs.name }}
-
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Extract release notes
-      id: get-release-notes
-      run: |
-        TAG_NAME=${GITHUB_REF#refs/tags/}
-        NOTES=$(git tag -l --format='%(contents)' "$TAG_NAME" || echo "No release notes")
-        echo "content=$NOTES" >> $GITHUB_OUTPUT
+      - name: Extract release notes
+        id: get-release-notes
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          NOTES=$(git tag -l --format='%(contents)' "$TAG_NAME" || echo "No release notes")
+          echo "content=$NOTES" >> $GITHUB_OUTPUT
 
-    - name: Get branch name
-      id: get-branch-name
-      run: |
-        BRANCH=${GITHUB_REF#refs/heads/}
-        echo "name=$BRANCH" >> $GITHUB_OUTPUT
+      - name: Get branch name
+        id: get-branch-name
+        run: |
+          BRANCH=${GITHUB_REF#refs/heads/}
+          echo "name=$BRANCH" >> $GITHUB_OUTPUT
 
   unit-test:
     needs: prebuild
     runs-on: ubuntu-latest
     outputs:
       test_status: ${{ steps.run-tests.outputs.result }}
-
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
 
-    - name: Run tests
-      id: run-tests
-      continue-on-error: true
-      run: |
-        if poetry run pytest; then
-          echo "result=success" >> $GITHUB_OUTPUT
-        else
-          echo "result=failure" >> $GITHUB_OUTPUT
-        fi
+      - name: Run tests
+        id: run-tests
+        continue-on-error: true
+        run: |
+          if poetry run pytest; then
+            echo "result=success" >> $GITHUB_OUTPUT
+          else
+            echo "result=failure" >> $GITHUB_OUTPUT
+          fi
 
-    - name: Print test result
-      run: |
-        echo "🔍 Unit Test Status: ${{ steps.run-tests.outputs.result }}"
-
+      - name: Print test result
+        run: |
+          echo "🔍 Unit Test Status: ${{ steps.run-tests.outputs.result }}"
 
   manual-approval:
     needs: unit-test
-    if: ${{ needs.unit-test.outputs.test_status == 'failure' }}
+    if: needs.unit-test.outputs.test_status == 'failure'
     runs-on: ubuntu-latest
     environment:
       name: production-approval
       url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
     steps:
-    - name: Require approval
-      run: echo "Manual approval required via Environment settings"
+      - name: Require approval
+        run: echo "Manual approval required via Environment settings"
 
   deploy:
     needs:
@@ -83,20 +79,18 @@ jobs:
     environment:
       name: production-approval
       url: https://your-production-url.com
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    # Fixed line 62 (previous error was missing proper indentation)
-    - name: Deployment preparation
-      run: |
-        echo "🔨 Building version ${{ github.ref_name }}"
-        echo "📦 Branch source: ${{ needs.prebuild.outputs.branch_name }}"
-        echo "📝 Release notes preview:"
-        echo "${{ needs.prebuild.outputs.release_notes }}"
+      - name: Deployment preparation
+        run: |
+          echo "🔨 Building version ${{ github.ref_name }}"
+          echo "📦 Branch source: ${{ needs.prebuild.outputs.branch_name }}"
+          echo "📝 Release notes preview:"
+          echo "${{ needs.prebuild.outputs.release_notes }}"
 
-    - name: Execute deployment
-      run: |
-        # Your actual deployment commands here
-        echo "✅ Successfully deployed to production!"
+      - name: Execute deployment
+        run: |
+          # Your actual deployment commands here
+          echo "✅ Successfully deployed to production!"

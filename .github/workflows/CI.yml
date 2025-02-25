@@ -3,11 +3,11 @@ name: CI
 on:
   push:
     branches:
-      - master
+      # - master
   pull_request:
     types: [opened, synchronize]
     branches:
-      - master
+      # - master
 
 env:
   PYTHON_VERSION: "3.11"
@@ -17,7 +17,7 @@ jobs:
     name: Lint and Test
     runs-on: ubuntu-latest
     outputs:
-      test_passed: ${{ steps.test_status.outputs.passed }}
+      test_status: ${{ steps.test_status.outputs.result }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
@@ -51,19 +51,19 @@ jobs:
         continue-on-error: true
         run: |
           if make test; then
-            echo "passed=true" >> $GITHUB_OUTPUT
+            echo "result=success" >> $GITHUB_OUTPUT
           else
-            echo "passed=false" >> $GITHUB_OUTPUT
+            echo "result=failure" >> $GITHUB_OUTPUT
           fi
 
       - name: Print Test Status
         run: |
-          echo "🔍 Test Result: ${{ steps.test_status.outputs.passed }}"
+          echo "🔍 Test Result: ${{ steps.test_status.outputs.result }}"
 
   manual-approval:
     needs: [lint_test]
     runs-on: ubuntu-latest
-    if: needs.lint_test.outputs.test_passed == 'false'
+    if: needs.lint_test.outputs.test_status == 'failure'
     environment: 
       name: test-approval
     steps:
@@ -75,13 +75,12 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       always() &&
-      (needs.lint_test.outputs.test_passed == 'true' ||
-       (needs.lint_test.outputs.test_passed == 'false' && needs.manual-approval.result == 'success'))
+      (needs.lint_test.outputs.test_status == 'success' ||
+       (needs.lint_test.outputs.test_status == 'failure' && needs.manual-approval.result == 'success'))
     steps:
       - name: Check Status
         run: |
-          if [[ "${{ needs.lint_test.outputs.test_passed }}" == "true" ]]; then
+          if [[ "${{ needs.lint_test.outputs.test_status }}" == "success" ]]; then
             echo "✅ All tests passed successfully!"
           else
             echo "⚠️ Tests failed but manually approved to proceed."
-          fi

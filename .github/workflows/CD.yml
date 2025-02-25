@@ -59,7 +59,7 @@ jobs:
     if: ${{ needs.unit-test.outputs.test_status == 'failure' }}
     runs-on: ubuntu-latest
     environment:
-      name: production-gate
+      name: production-approval
       url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
     steps:
@@ -76,7 +76,7 @@ jobs:
       (needs.unit-test.outputs.test_status == 'failure' && needs.manual-approval.result == 'success')
     runs-on: ubuntu-latest
     environment:
-      name: production
+      name: production-approval
       url: https://your-production-url.com
 
     steps:

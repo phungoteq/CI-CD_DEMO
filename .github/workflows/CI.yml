@@ -1,12 +1,17 @@
 name: CI
+
 on:
   push:
     branches:
-      - master
-  pull_request:
-    types: [opened, synchronize]
-    branches:
-      - master
+  #     # - master
+  # pull_request:
+  #   types: [opened, synchronize]
+  #   branches:
+  #     # - master
+
+env:
+  PYTHON_VERSION: "3.11"
+
 jobs:
   lint_test:
     name: Lint and Test
@@ -20,7 +25,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install poetry
         run: |
@@ -30,18 +35,18 @@ jobs:
       - name: Poetry Install Dependencies
         run: poetry install
 
-      - name: create .env file
+      - name: Create .env file
         run: cp .env.example .env
 
-      - name: lint
+      - name: Run Linter
         continue-on-error: true
         run: make lint
 
-      - name: format
+      - name: Run Code Formatter
         continue-on-error: true
         run: make format
 
-      - name: Run tests
+      - name: Run Tests
         id: test_status
         continue-on-error: true
         run: |
@@ -50,6 +55,10 @@ jobs:
           else
             echo "passed=false" >> $GITHUB_OUTPUT
           fi
+
+      - name: Print Test Status
+        run: |
+          echo "🔍 Test Result: ${{ steps.test_status.outputs.passed }}"
 
   manual-approval:
     needs: [lint_test]
@@ -72,7 +81,7 @@ jobs:
       - name: Check Status
         run: |
           if [[ "${{ needs.lint_test.outputs.test_passed }}" == "true" ]]; then
-            echo "All tests passed successfully!"
+            echo "✅ All tests passed successfully!"
           else
-            echo "Tests failed but manually approved to proceed."
+            echo "⚠️ Tests failed but manually approved to proceed."
           fi

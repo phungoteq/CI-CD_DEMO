@@ -12,5 +12,5 @@ def test_read_root():
 
 def test_read_item():
     response = client.get("/items/1")
-    # assert response.status_code == 200
-    assert response.json() == {"item_id": 2}
+    assert response.status_code == 200
+    assert response.json() == {"item_id": 1}

@@ -1,83 +1,99 @@
-name: CI Pipeline
+name: CD Pipeline
 
 on:
   push:
     branches:
-      - main
-      - develop
+      - main 
+      - feature/*
     tags:
       - 'v*.*.*'
-  pull_request:
-    types: [opened, synchronize]
-    branches:
-      - main
-      - develop
 
 env:
   PYTHON_VERSION: "3.11"
-  STAGING_URL: "https://staging.example.com"
-  PRODUCTION_URL: "https://prod.example.com"
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  DEPLOY_ENV: ${{ contains(github.ref, 'tags/v') && 'production' || 'staging' }}
 
 jobs:
-  lint_test:
-    name: Lint and Test
+  prebuild:
     runs-on: ubuntu-latest
     outputs:
-      test_passed: ${{ steps.test_status.outputs.passed }}
+      release_notes: ${{ steps.get-release-notes.outputs.content }}
+      branch_name: ${{ steps.get-branch-name.outputs.name }}
+      tag_name: ${{ steps.get-tag-name.outputs.name }}
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: Set up Python ${{ env.PYTHON_VERSION }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-
-    - name: Install dependencies
+    - name: Extract release notes from tag 
+      id: get-release-notes
       run: |
-        poetry install --no-interaction
-
-    - name: Run linter
-      continue-on-error: true
-      run: make lint
-
-    - name: Run tests
-      id: test_status
-      continue-on-error: true
-      run: |
-        if make test; then
-          echo "passed=true" >> $GITHUB_OUTPUT
-        else
-          echo "passed=false" >> $GITHUB_OUTPUT
+        if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          NOTES=$(git tag -l --format='%(contents)' "$TAG_NAME" || echo "No release notes")
+        else 
+          NOTES="Deployment from branch ${GITHUB_REF#refs/heads/}"
         fi
+        echo "content=$NOTES" >> $GITHUB_OUTPUT
 
-  quality_gate:
-    needs: lint_test
-    runs-on: ubuntu-latest
-    if: always()
-    
-    steps:
-    - name: Analyze results
+    - name: Get branch/tag info 
+      id: get-branch-name 
       run: |
-        echo "Test status: ${{ needs.lint_test.outputs.test_passed }}"
-        echo "Code coverage: 85%"
-        echo "Security scan passed"
+        if [[ "$GITHUB_REF" == refs/tags/* ]]; then 
+          echo "name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT 
+        else 
+          echo "name=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT 
+        fi 
 
-  manual_approval:
-    needs: lint_test
-    if: ${{ needs.lint_test.outputs.test_passed == 'false' }}
-    runs-on: ubuntu-latest
-    environment:
-      name: qa-gate
-      protection_rules:
-        required_reviewers: [team-lead]
-        prevent_self_review: true
+    - name: Get tag version 
+      id: get-tag-name 
+      run: |
+        TAG_NAME=${GITHUB_REF#refs/tags/}
+        echo "name=$TAG_NAME" >> $GITHUB_OUTPUT 
+
+  unit-test:
+    needs: prebuild 
+    runs-on ubuntu-latest 
+    outputs:
+      test_status ${{ steps.run-tests.outputs.result }} 
 
     steps:
-    - name: Require approval
-      run: echo "Manual approval required for deployment"
+    - uses actions/checkout@v4 
+
+    - name Setup Python ${{ env.PYTHON_VERSION }} 
+      uses actions/setup-python@v5 
+
+    - name Run tests with coverage 
+      id run-tests 
+      continue-on-error true 
+      run | 
+        poetry run pytest --cov=myapp || exit_code=$?
+        echo "result=$(if [[ $exit_code -eq 0 ]]; then echo 'success'; else echo 'failure'; fi)" >> $GITHUB_OUTPUT 
+
+  manual-prod-approval:
+    needs [prebuild unit-test] 
+    if |-
+      needs.prebuild.outputs.tag_name != '' && 
+      needs.unit-test.outputs.test_status == 'failure' 
+    
+    runs-on ubuntu-latest 
+    
+    environment test-approval
+
+    steps |-
+      - name Require approval from Ops team  
+        run echo "🛑 Manual approval required via GitHub Environment"
+
+  deploy |-
+    needs [prebuild unit-test manual-prod-approval] 
+
+    environment |-
+      name ${{ env.DEPLOY_ENV }}  
+      url https://$DEPLOY_ENV.example.com 
+
+    steps |-
+      - uses actions/checkout@v4 
+
+      - name Show deployment info  
+        run |-
+          echo "🔨 Deploying version ${{ needs.prebuild.outputs.tag_name || needs.prebuild.outputs.branch_name }}"  
+          echo "📝 Release notes:"  
+          echo "${{ needs.prebuild.outputs.release_notes }}"  

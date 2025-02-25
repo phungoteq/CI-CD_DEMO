@@ -60,7 +60,8 @@ jobs:
         echo "🔍 Unit Test Status: ${{ steps.run-tests.outputs.result }}"
         
     - name: Debug Test Status
-      run: echo "Test Status: ${{ needs.unit-test.outputs.test_status }}"
+      run: |
+        echo "Test Status: ${{ needs.unit-test.outputs.test_status }}"
 
   manual-approval-cd:
     needs: unit-test

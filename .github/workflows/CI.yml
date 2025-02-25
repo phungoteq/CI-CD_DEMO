@@ -57,7 +57,8 @@ jobs:
           fi
 
       - name: Print Test Status
-        run: echo "🔍 Test Result: ${{ steps.test_status.outputs.passed }}"
+        run: |
+          echo "🔍 Test Result: ${{ steps.test_status.outputs.passed }}"
 
   manual-approval:
     needs: [lint_test]

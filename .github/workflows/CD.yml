@@ -58,6 +58,9 @@ jobs:
     - name: Print test result
       run: |
         echo "🔍 Unit Test Status: ${{ steps.run-tests.outputs.result }}"
+        
+    - name: Debug Test Status
+      run: echo "Test Status: ${{ needs.unit-test.outputs.test_status }}"
 
   manual-approval-cd:
     needs: unit-test
@@ -70,6 +73,12 @@ jobs:
     steps:
     - name: Require approval
       run: echo "Manual approval required via Environment settings"
+
+  outputs:
+    release_notes: ${{ steps.get-release-notes.outputs.content }}
+    branch_name: ${{ steps.get-branch-name.outputs.name }}
+  - name: Debug Branch Name
+    run: echo "Branch Name: ${{ needs.prebuild.outputs.branch_name }}"
 
   deploy:
     needs:

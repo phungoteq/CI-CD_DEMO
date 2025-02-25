@@ -1,99 +1,111 @@
-name: CD Pipeline
-
+name: CI
 on:
   push:
     branches:
-      - main 
-      - feature/*
+      - master
     tags:
-      - 'v*.*.*'
-
-env:
-  PYTHON_VERSION: "3.11"
-  DEPLOY_ENV: ${{ contains(github.ref, 'tags/v') && 'production' || 'staging' }}
+      - 'feature-*'
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - master
 
 jobs:
-  prebuild:
+  lint_test:
+    name: Lint and Test
     runs-on: ubuntu-latest
     outputs:
-      release_notes: ${{ steps.get-release-notes.outputs.content }}
-      branch_name: ${{ steps.get-branch-name.outputs.name }}
-      tag_name: ${{ steps.get-tag-name.outputs.name }}
-
+      test_passed: ${{ steps.test_status.outputs.passed }}
+      is_tag: ${{ steps.check_tag.outputs.is_tag }}
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout Repo
+        uses: actions/checkout@v4
 
-    - name: Extract release notes from tag 
-      id: get-release-notes
-      run: |
-        if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-          TAG_NAME=${GITHUB_REF#refs/tags/}
-          NOTES=$(git tag -l --format='%(contents)' "$TAG_NAME" || echo "No release notes")
-        else 
-          NOTES="Deployment from branch ${GITHUB_REF#refs/heads/}"
-        fi
-        echo "content=$NOTES" >> $GITHUB_OUTPUT
+      - name: Check if triggered by tag
+        id: check_tag
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "is_tag=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_tag=false" >> $GITHUB_OUTPUT
+          fi
 
-    - name: Get branch/tag info 
-      id: get-branch-name 
-      run: |
-        if [[ "$GITHUB_REF" == refs/tags/* ]]; then 
-          echo "name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT 
-        else 
-          echo "name=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT 
-        fi 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-    - name: Get tag version 
-      id: get-tag-name 
-      run: |
-        TAG_NAME=${GITHUB_REF#refs/tags/}
-        echo "name=$TAG_NAME" >> $GITHUB_OUTPUT 
+      - name: Install poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python - --version 1.8.2
+          echo "$HOME/.poetry/bin" >> $GITHUB_PATH
 
-  unit-test:
-    needs: prebuild 
-    runs-on ubuntu-latest 
-    outputs:
-      test_status ${{ steps.run-tests.outputs.result }} 
+      - name: Poetry Install Dependencies
+        run: poetry install
 
+      - name: create .env file
+        run: cp .env.example .env
+
+      - name: lint
+        continue-on-error: true
+        run: make lint
+
+      - name: format
+        continue-on-error: true
+        run: make format
+
+      - name: Run tests
+        id: test_status
+        continue-on-error: true
+        run: |
+          if make test; then
+            echo "passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "passed=false" >> $GITHUB_OUTPUT
+          fi
+
+  manual-approval:
+    needs: [lint_test]
+    runs-on: ubuntu-latest
+    if: |
+      needs.lint_test.outputs.test_passed == 'false' &&
+      (needs.lint_test.outputs.is_tag == 'true' || github.event_name == 'pull_request')
+    environment: 
+      name: test-approval
+      url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
-    - uses actions/checkout@v4 
+      - name: Manual Approval for Failed Tests
+        run: |
+          if [[ "${{ needs.lint_test.outputs.is_tag }}" == "true" ]]; then
+            echo "Manual approval required for tag deployment with failed tests..."
+          else
+            echo "Manual approval required for PR with failed tests..."
+          fi
 
-    - name Setup Python ${{ env.PYTHON_VERSION }} 
-      uses actions/setup-python@v5 
+  merge-check:
+    needs: [lint_test, manual-approval]
+    runs-on: ubuntu-latest
+    if: |
+      always() &&
+      (needs.lint_test.outputs.test_passed == 'true' ||
+       (needs.lint_test.outputs.test_passed == 'false' && needs.manual-approval.result == 'success'))
+    steps:
+      - name: Check Status
+        run: |
+          if [[ "${{ needs.lint_test.outputs.is_tag }}" == "true" ]]; then
+            echo "🏷️ Processing tag: ${GITHUB_REF#refs/tags/}"
+          else
+            echo "🔄 Processing branch: ${GITHUB_REF#refs/heads/}"
+          fi
 
-    - name Run tests with coverage 
-      id run-tests 
-      continue-on-error true 
-      run | 
-        poetry run pytest --cov=myapp || exit_code=$?
-        echo "result=$(if [[ $exit_code -eq 0 ]]; then echo 'success'; else echo 'failure'; fi)" >> $GITHUB_OUTPUT 
+          if [[ "${{ needs.lint_test.outputs.test_passed }}" == "true" ]]; then
+            echo "✅ All tests passed successfully!"
+          else
+            echo "⚠️ Tests failed but manually approved to proceed."
+          fi
 
-  manual-prod-approval:
-    needs [prebuild unit-test] 
-    if |-
-      needs.prebuild.outputs.tag_name != '' && 
-      needs.unit-test.outputs.test_status == 'failure' 
-    
-    runs-on ubuntu-latest 
-    
-    environment test-approval
-
-    steps |-
-      - name Require approval from Ops team  
-        run echo "🛑 Manual approval required via GitHub Environment"
-
-  deploy |-
-    needs [prebuild unit-test manual-prod-approval] 
-
-    environment |-
-      name ${{ env.DEPLOY_ENV }}  
-      url https://$DEPLOY_ENV.example.com 
-
-    steps |-
-      - uses actions/checkout@v4 
-
-      - name Show deployment info  
-        run |-
-          echo "🔨 Deploying version ${{ needs.prebuild.outputs.tag_name || needs.prebuild.outputs.branch_name }}"  
-          echo "📝 Release notes:"  
-          echo "${{ needs.prebuild.outputs.release_notes }}"  
+      - name: Tag Status
+        if: needs.lint_test.outputs.is_tag == 'true'
+        run: |
+          echo "Tag validation completed"
+          echo "Tag: ${GITHUB_REF#refs/tags/}"

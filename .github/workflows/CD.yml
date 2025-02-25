@@ -17,22 +17,32 @@ jobs:
     outputs:
       release_notes: ${{ steps.get-release-notes.outputs.content }}
       branch_name: ${{ steps.get-branch-name.outputs.name }}
+      is_production: ${{ contains(github.ref, 'tags/v') }}
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Extract release notes
       id: get-release-notes
       run: |
-        TAG_NAME=${GITHUB_REF#refs/tags/}
-        NOTES=$(git tag -l --format='%(contents)' "$TAG_NAME" || echo "No release notes")
+        if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          NOTES=$(git tag -l --format='%(contents)' "$TAG_NAME" || echo "No release notes")
+        else
+          NOTES="Deployment from branch ${GITHUB_REF#refs/heads/}"
+        fi
         echo "content=$NOTES" >> $GITHUB_OUTPUT
 
-    - name: Get branch name
+    - name: Get branch/tag info
       id: get-branch-name
       run: |
-        BRANCH=${GITHUB_REF#refs/heads/}
-        echo "name=$BRANCH" >> $GITHUB_OUTPUT
+        if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+          echo "name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        else
+          echo "name=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+        fi
 
   unit-test:
     needs: prebuild
@@ -47,14 +57,9 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ env.PYTHON_VERSION }}
-        
-    - name: Install Poetry
-      run: |
-        curl -sSL https://install.python-poetry.org | python3 - --version 1.8.2
-        echo "$HOME/.poetry/bin" >> $GITHUB_PATH
 
-    - name: Install dependencies
-      run: poetry install
+    - name: Install Poetry
+      run: pip install poetry==1.8.2
 
     - name: Run tests
       id: run-tests
@@ -66,49 +71,53 @@ jobs:
           echo "result=failure" >> $GITHUB_OUTPUT
         fi
 
-    - name: Print test result
-      run: |
-        echo "🔍 Unit Test Status: ${{ steps.run-tests.outputs.result }}"
-
-    - name: Debug Test Status
-      run: |
-        echo "Test Status: ${{ steps.run-tests.outputs.result }}"
-
   manual-approval-cd:
-    needs: unit-test
-    if: ${{ needs.unit-test.outputs.test_status == 'failure' }}
+    needs: 
+      - prebuild
+      - unit-test
+    if: |
+      ${{ needs.unit-test.outputs.test_status == 'failure' }} &&
+      ${{ needs.prebuild.outputs.is_production == 'true' }}
     runs-on: ubuntu-latest
     environment:
-      name: production-approval
-      url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      name: production-gate
+      url: ${{ github.server_url }}/${{ github.repository }}
 
     steps:
     - name: Require approval
-      run: echo "Manual approval required via Environment settings"
+      run: echo "🛑 Manual approval required for production deployment"
 
   deploy:
     needs:
       - prebuild
       - unit-test
-      - manual-approval-cd
+      - manual-approval-cd # Chỉ phụ thuộc khi cần approval
+    
+    # Điều kiện triển khai:
+    # 1. Test pass HOẶC 
+    # 2. Test fail nhưng đã approve + là deployment production 
     if: |
-      needs.unit-test.outputs.test_status == 'success' || needs.manual-approval-cd.result == 'success'
+      (needs.unit-test.outputs.test_status == 'success') ||
+      (needs.unit-test.outputs.test_status == 'failure' &&
+       needs.prebuild.outputs.is_production == 'true' &&
+       needs.manual-approval-cd.result == 'success')
+    
     runs-on: ubuntu-latest
+    
     environment:
-      name: production-approval
-      url: https://your-production-url.com
-
+      name: ${{ needs.prebuild.outputs.is_production == 'true' && 'production' || 'staging' }}
+    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Deployment preparation
+    - uses: actions/checkout@v4
+    
+    - name: Deployment info
       run: |
-        echo "🔨 Building version ${{ github.ref_name }}"
-        echo "📦 Branch source: ${{ needs.prebuild.outputs.branch_name }}"
-        echo "📝 Release notes preview:"
+        echo "🚀 Deploying to ${{ env.DEPLOY_ENV }}"
+        echo "📌 Source: ${{ needs.prebuild.outputs.branch_name }}"
+        echo "📝 Release notes:" 
         echo "${{ needs.prebuild.outputs.release_notes }}"
-
+    
     - name: Execute deployment
       run: |
-        echo "✅ Successfully deployed to production!"
+        # Thêm lệnh triển khai thực tế của bạn ở đây 
+        echo "✅ Successfully deployed!"

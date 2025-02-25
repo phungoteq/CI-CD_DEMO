@@ -2,80 +2,91 @@ name: CD_Demo
 
 on:
   push:
-    branches:
+    branches: 
 
 jobs:
   prebuild:
     runs-on: ubuntu-latest
     outputs:
-      RELEASE_NOTES: ${{ steps.extractReleaseNotes.outputs.RELEASE_NOTES }}
-      BRANCH_NAME: ${{ steps.extractBranch.outputs.BRANCH_NAME }}
+      release_notes: ${{ steps.extract-release-notes.outputs.content }}
+      branch_name: ${{ steps.get-branch-name.outputs.name }}
     
     steps:
-      - uses: actions/checkout@v4
-        
-      - id: extractReleaseNotes
-        run: |
-          TAG_NAME=$(echo $GITHUB_REF | sed 's|refs/tags/||')
-          RELEASE_NOTES=$(git tag -l --format='%(contents)' $TAG_NAME)
-          echo "RELEASE_NOTES<<EOF" >> $GITHUB_OUTPUT
-          echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-      - id: extractBranch
-        run: |
-          COMMIT_SHA=$(git rev-list -n 1 $GITHUB_REF)
-          BRANCH_NAME=$(git branch -r --contains $COMMIT_SHA | sed 's|origin/||' | head -n 1)
-          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_OUTPUT
+    - name: Extract release notes
+      id: extract-release-notes
+      run: |
+        TAG_NAME=${GITHUB_REF#refs/tags/}
+        NOTES=$(git tag -l --format='%(contents)' "$TAG_NAME")
+        echo "content=$NOTES" >> $GITHUB_OUTPUT
+
+    - name: Get branch name
+      id: get-branch-name
+      run: |
+        BRANCH=${GITHUB_REF#refs/heads/}
+        echo "name=$BRANCH" >> $GITHUB_OUTPUT
 
   unit-test:
-    needs: [prebuild]
+    needs: prebuild
     runs-on: ubuntu-latest
     outputs:
-      test_passed: ${{ steps.test_status.outputs.passed }}
+      test_status: ${{ steps.run-tests.outputs.result }}
     
     steps:
-      - uses: actions/checkout@v4
-        
-      - uses: actions/setup-python@v5
-        
-      - name: Run tests
-        id: test_status
-        continue-on-error: true
-        run: |
-          # Your actual testing commands here 
-          echo "passed=$?" >> $GITHUB_OUTPUT
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+    
+    - name: Install dependencies
+      run: poetry install --no-interaction
+    
+    - name: Run tests
+      id: run-tests
+      continue-on-error: true
+      run: |
+        if poetry run pytest; then
+          echo "result=success" >> $GITHUB_OUTPUT
+        else
+          echo "result=failure" >> $GITHUB_OUTPUT
+        fi
 
-  staging-deployment:
-    needs: [unit-test]
+  manual-approval:
+    needs: unit-test
+    if: ${{ needs.unit-test.outputs.test_status == 'failure' }}
     runs-on: ubuntu-latest
+    environment:
+      name: production-approval
+      url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     
     steps:
-      - name: Conditional Deployment Gatekeeper
-        id: check-deployment-condition
-        
-        env:
-          TEST_RESULT_PASSED: ${{ needs.unit-test.outputs.test_passed }}
-        
-        run: |
-          echo "Test Result Status = ${TEST_RESULT_PASSED}"
-          
-          # Only allow auto-deployment when tests pass 
-          [[ "$TEST_RESULT_PASSED" == "0" ]] || exit 1
+    - name: Require approval
+      run: echo "Manual approval required for deployment"
 
-      - name: Perform Staging Deployment 
-        # Only runs when previous step succeeds 
-        uses your-deployment-action@v2
-
-  production-deployment:
-    name: Production Deployment Gate 
+  deploy:
+    needs:
+      - prebuild
+      - unit-test
+      - manual-approval
+    if: |
+      (needs.unit-test.outputs.test_status == 'success') ||
+      (needs.unit-test.outputs.test_status == 'failure' && needs.manual-approval.result == 'success')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     
-     # Require explicit approval even when automated checks pass 
-     environment:
-       name: production 
-       url:${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+    - uses: actions/checkout@v4
     
-     # Only trigger after staging validation 
-     needs:[staging-deployment] 
-     
-     steps:[your-production-deployment-steps]
+    - name: Deployment setup
+      run: echo "Deploying version ${{ github.ref_name }}"
+    
+    - name: Show deployment info
+      run: |
+        echo "Branch: ${{ needs.prebuild.outputs.branch_name }}"
+        echo "Release notes: ${{ needs.prebuild.outputs.release_notes }}"

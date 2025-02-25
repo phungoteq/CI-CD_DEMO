@@ -2,7 +2,8 @@ name: CD Pipeline
 
 on:
   push:
-    branches:
+    branches: [main]
+    tags: ['v*.*.*']
 
 env:
   PYTHON_VERSION: "3.11"
@@ -15,20 +16,20 @@ jobs:
       branch_name: ${{ steps.get-branch-name.outputs.name }}
 
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - name: Extract release notes
-        id: get-release-notes
-        run: |
-          TAG_NAME=${GITHUB_REF#refs/tags/}
-          NOTES=$(git tag -l --format='%(contents)' "$TAG_NAME" || echo "No release notes")
-          echo "content=$NOTES" >> $GITHUB_OUTPUT
+    - name: Extract release notes
+      id: get-release-notes
+      run: |
+        TAG_NAME=${GITHUB_REF#refs/tags/}
+        NOTES=$(git tag -l --format='%(contents)' "$TAG_NAME" || echo "No release notes")
+        echo "content=$NOTES" >> $GITHUB_OUTPUT
 
-      - name: Get branch name
-        id: get-branch-name
-        run: |
-          BRANCH=${GITHUB_REF#refs/heads/}
-          echo "name=$BRANCH" >> $GITHUB_OUTPUT
+    - name: Get branch name
+      id: get-branch-name
+      run: |
+        BRANCH=${GITHUB_REF#refs/heads/}
+        echo "name=$BRANCH" >> $GITHUB_OUTPUT
 
   unit-test:
     needs: prebuild
@@ -37,50 +38,61 @@ jobs:
       test_status: ${{ steps.run-tests.outputs.result }}
 
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Run tests
-        id: run-tests
-        continue-on-error: true 
-        run: |
-          # Thay bằng lệnh test thực tế của bạn 
+    - name: Run tests
+      id: run-tests
+      continue-on-error: true
+      run: |
+        if poetry run pytest; then
           echo "result=success" >> $GITHUB_OUTPUT
+        else
+          echo "result=failure" >> $GITHUB_OUTPUT
+        fi
 
   manual-approval:
     needs: unit-test
     if: ${{ needs.unit-test.outputs.test_status == 'failure' }}
     runs-on: ubuntu-latest
-    
     environment:
-      name: production-gate 
-    
+      name: production-gate
+      url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
     steps:
-      - name: Require human approval 
-        run echo "Approvals required via Environment settings"
+    - name: Require approval
+      run: echo "Manual approval required via Environment settings"
 
-  auto-deploy:
+  deploy:
     needs:
-      - prebuild 
-      - unit-test 
-    
-    if:${{ success() && needs.unit-test.outputs.test_status == 'success' }}
-    
+      - prebuild
+      - unit-test
+      - manual-approval
+    if: |
+      (needs.unit-test.outputs.test_status == 'success') ||
+      (needs.unit-test.outputs.test_status == 'failure' && needs.manual-approval.result == 'success')
+    runs-on: ubuntu-latest
     environment:
-      name production
-    
-    steps:[...]
+      name: production
+      url: https://your-production-url.com
 
-  approved-deploy:
-    needs:
-      - prebuild 
-      - unit_test 
-      - manual_aprove
-    
-     if:${{ failure() && need.unittest.output.status == fail }}
-    
-     environment production
-    
-     steps:[...]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # Fixed line 62 (previous error was missing proper indentation)
+    - name: Deployment preparation
+      run: |
+        echo "🔨 Building version ${{ github.ref_name }}"
+        echo "📦 Branch source: ${{ needs.prebuild.outputs.branch_name }}"
+        echo "📝 Release notes preview:"
+        echo "${{ needs.prebuild.outputs.release_notes }}"
+
+    - name: Execute deployment
+      run: |
+        # Your actual deployment commands here
+        echo "✅ Successfully deployed to production!"

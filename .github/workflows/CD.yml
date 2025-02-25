@@ -35,37 +35,37 @@ jobs:
         echo "name=$BRANCH" >> $GITHUB_OUTPUT
 
   unit-test:
-    needs: prebuild
-    runs-on: ubuntu-latest
-    outputs:
-      test_status: ${{ steps.run-tests.outputs.result }}
+      needs: prebuild
+      runs-on: ubuntu-latest
+      outputs:
+        test_status: ${{ steps.run-tests.outputs.result }}
 
-    steps:
-    - uses: actions/checkout@v4
+      steps:
+      - uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
 
-    - name: Install Poetry
-      run: pip install poetry==1.8.2
+      - name: Install Poetry
+        run: pip install poetry==1.8.2
 
-    - name: Run tests
-      id: run-tests
-      continue-on-error: true
-      run: |
-        if poetry run pytest; then
-          echo "result=success" >> $GITHUB_OUTPUT
-        else
-          echo "result=failure" >> $GITHUB_OUTPUT
-        fi
+      - name: Run tests
+        id: run-tests
+        run: |
+          if poetry run pytest; then
+            echo "result=success" >> $GITHUB_OUTPUT
+          else
+            echo "result=failure" >> $GITHUB_OUTPUT
+            exit 1
+          fi
 
-    - name: Print simplified status
-      run: |
-        echo "=== TEST SUMMARY ==="
-        echo "Status: ${{ steps.run-tests.outputs.result }}"
-        echo "===================="
+      - name: Print simplified status
+        run: |
+          echo "=== TEST SUMMARY ==="
+          echo "Status: ${{ steps.run-tests.outputs.result }}"
+          echo "===================="
 
   manual-approval-cd:
     needs: unit-test
@@ -82,19 +82,14 @@ jobs:
         reviewers: "your-team-name"
 
   deploy:
-    needs:
-      - prebuild 
-      - unit-test 
-      - manual-approval-cd 
-    
-    if: |
-      (needs.unit-test.outputs.test_status == 'success') ||
-      (needs.unit-test.outputs.test_status == 'failure' && needs.manual-approval-cd.result == 'success')
-    
-    runs-on: ubuntu-latest
-    
-    environment:
-      name: production-approval 
+      needs: [prebuild, unit-test, manual-approval-cd]
+      if: |
+        always() &&
+        (needs.unit-test.result == 'success' || needs.manual-approval-cd.result == 'success')
+      runs-on: ubuntu-latest
+      environment:
+        name: production-approval
+
     
     steps:
     - uses: actions/checkout@v4

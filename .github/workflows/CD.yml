@@ -89,7 +89,7 @@ jobs:
       needs: [prebuild, unit-test, manual-approval-cd]
       if: |
         always() &&
-        (needs.unit-test.outputs.test_status == 'success' || needs.manual-approval-cd.result == 'success')
+        (steps.run-tests.outputs.result == 'success' || needs.manual-approval-cd.result == 'success')
       runs-on: ubuntu-latest
       environment:
         name: production-approval

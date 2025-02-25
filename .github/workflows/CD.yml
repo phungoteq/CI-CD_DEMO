@@ -3,7 +3,10 @@ name: CD Pipeline
 on:
   push:
     branches:
-      - master
+      - main
+      - feature/*
+    tags:
+      - 'v*.*.*'
 
 env:
   PYTHON_VERSION: "3.11"

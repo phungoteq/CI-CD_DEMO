@@ -51,6 +51,10 @@ jobs:
       - name: Install Poetry
         run: pip install poetry==1.8.2
 
+      - name: Install dependencies
+        run: |
+          poetry install
+
       - name: Run tests
         id: run-tests
         run: |

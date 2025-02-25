@@ -73,18 +73,17 @@ jobs:
           echo "===================="
 
   manual-approval-cd:
-    needs: unit-test
-    if: ${{ needs.unit-test.outputs.test_status == 'failure' }}
-    runs-on: ubuntu-latest
-    environment:
-      name: production-approval
-
-    steps:
-    - name: Wait for approval
-      uses: tibdex/request-review@v1 
-      with:
-        label: "requires-review"
-        reviewers: "your-team-name"
+      needs: unit-test
+      if: needs.unit-test.outputs.test_status == 'failure'
+      runs-on: ubuntu-latest
+      environment:
+        name: production-approval
+      
+      steps:
+        - name: Manual Approval Required
+          run: |
+            echo "Tests failed - Manual approval required for deployment"
+            echo "Please review the test results and approve if deployment should proceed"
 
   deploy:
       needs: [prebuild, unit-test, manual-approval-cd]

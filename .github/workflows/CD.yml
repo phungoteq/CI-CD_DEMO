@@ -92,7 +92,7 @@ jobs:
         (needs.unit-test.outputs.test_status == 'success' || needs.manual-approval-cd.result == 'success')
       runs-on: ubuntu-latest
       environment:
-        ${{ needs.unit-test.outputs.test_status == 'success' && 'production' || 'production-approval' }}
+        name: ${{ needs.unit-test.outputs.test_status == 'success' && 'production' || 'production' }}
       steps:
         - uses: actions/checkout@v4
         

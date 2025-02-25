@@ -1,81 +1,82 @@
-name: CI Pipeline
-
+name: CI
 on:
   push:
     branches:
-      - main
-      - develop
+      - master
+      - feature/*
     tags:
       - 'v*.*.*'
   pull_request:
     types: [opened, synchronize]
     branches:
-      - main
-      - develop
-
-env:
-  PYTHON_VERSION: "3.11"
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
+      - master
+      - feature/*
 jobs:
   lint_test:
     name: Lint and Test
     runs-on: ubuntu-latest
     outputs:
       test_passed: ${{ steps.test_status.outputs.passed }}
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout Repo
+        uses: actions/checkout@v4
 
-    - name: Set up Python ${{ env.PYTHON_VERSION }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-    - name: Install dependencies
-      run: |
-        poetry install --no-interaction
+      - name: Install poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python - --version 1.8.2
+          echo "$HOME/.poetry/bin" >> $GITHUB_PATH
 
-    - name: Run linter
-      continue-on-error: true
-      run: make lint
+      - name: Poetry Install Dependencies
+        run: poetry install
 
-    - name: Run tests
-      id: test_status
-      continue-on-error: true
-      run: |
-        if make test; then
-          echo "passed=true" >> $GITHUB_OUTPUT
-        else
-          echo "passed=false" >> $GITHUB_OUTPUT
-        fi
+      - name: create .env file
+        run: cp .env.example .env
 
-  quality_gate:
-    needs: lint_test
+      - name: lint
+        continue-on-error: true
+        run: make lint
+
+      - name: format
+        continue-on-error: true
+        run: make format
+
+      - name: Run tests
+        id: test_status
+        continue-on-error: true
+        run: |
+          if make test; then
+            echo "passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "passed=false" >> $GITHUB_OUTPUT
+          fi
+
+  manual-approval:
+    needs: [lint_test]
     runs-on: ubuntu-latest
-    if: always()
-    
+    if: needs.lint_test.outputs.test_passed == 'false'
+    environment: 
+      name: test-approval
     steps:
-    - name: Analyze results
-      run: |
-        echo "Test status: ${{ needs.lint_test.outputs.test_passed }}"
-        echo "Code coverage: 85%"
-        echo "Security scan passed"
+      - name: Manual Approval for Failed Tests
+        run: echo "Manual approval required due to failed tests..."
 
-  manual_approval:
-    needs: lint_test
-    if: ${{ needs.lint_test.outputs.test_passed == 'false' }}
+  merge-check:
+    needs: [lint_test, manual-approval]
     runs-on: ubuntu-latest
-    environment:
-      name: qa-gate
-      protection_rules:
-        required_reviewers: [team-lead]
-        prevent_self_review: true
-
+    if: |
+      always() &&
+      (needs.lint_test.outputs.test_passed == 'true' ||
+       (needs.lint_test.outputs.test_passed == 'false' && needs.manual-approval.result == 'success'))
     steps:
-    - name: Require approval
-      run: echo "Manual approval required for deployment"
+      - name: Check Status
+        run: |
+          if [[ "${{ needs.lint_test.outputs.test_passed }}" == "true" ]]; then
+            echo "All tests passed successfully!"
+          else
+            echo "Tests failed but manually approved to proceed."
+          fi
